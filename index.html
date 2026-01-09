@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     <title>Sistema de Rifas</title>
     <style>
-        /* Estilos (mantuve tu look, limpié algunos fragmentos truncados) */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -50,6 +49,8 @@
         .empty-state { text-align: center; padding: 60px 20px; }
         .rifa-detail-header { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .small { font-size: 0.9rem; color: #555; }
+        .alert-reserva { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 15px 0; border-radius: 8px; }
+        .alert-reserva strong { color: #92400e; }
     </style>
 </head>
 <body>
@@ -127,7 +128,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
 
     <script>
-        // CONFIGURACIÓN FIREBASE (ajustada: databaseURL sin barra final)
+        // CONFIGURACIÓN FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyC2jjXcONaf6Sej9hQ4ZqTVwUI2Nlz_2qg",
             authDomain: "sistema-rifas-cc455.firebaseapp.com",
@@ -139,12 +140,12 @@
             measurementId: "G-ZGXFGV2YSZ"
         };
 
-        // Inicializar Firebase con manejo seguro si ya estuviera inicializado
+        // Inicializar Firebase
         try {
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);
             } else {
-                firebase.app(); // usar la app ya inicializada
+                firebase.app();
             }
         } catch (err) {
             console.error('Error inicializando Firebase:', err);
@@ -152,14 +153,6 @@
         }
 
         const db = firebase.database();
-
-        // DEBUG: comprobar apps y conexión
-        console.log('Firebase apps:', firebase.apps);
-        try {
-            console.log('Firebase default app name:', firebase.app().name);
-        } catch (e) {
-            console.warn('No se pudo obtener firebase.app()', e);
-        }
 
         // VARIABLES
         const ADMIN_PASSWORD = 'admin123';
@@ -171,16 +164,13 @@
         let reservasActivas = {};
         let whatsappGrupo = '';
 
-        // --- INTEGRACIÓN DE BASE DE DATOS ---
-
         function init() {
-            // 1. Escuchar Rifas en tiempo real
+            // Escuchar Rifas en tiempo real
             db.ref('rifas').on('value', (snapshot) => {
                 const data = snapshot.val();
                 rifas = data ? Object.keys(data).map(key => ({...data[key], id: key})) : [];
                 renderRifas();
 
-                // Si se está viendo una rifa, actualizarla
                 if (rifaActual) {
                     const actualizada = rifas.find(r => r.id === rifaActual.id);
                     if (actualizada) {
@@ -189,7 +179,6 @@
                             verRifa(rifaActual.id, true);
                         }
                     } else {
-                        // rifa eliminada
                         cerrarModal('modalVerRifa');
                     }
                 }
@@ -200,15 +189,16 @@
                 }
             });
 
-            // 2. Escuchar Reservas
+            // Escuchar Reservas
             db.ref('reservasActivas').on('value', (snapshot) => {
                 reservasActivas = snapshot.val() || {};
+                console.log('Reservas activas actualizadas:', reservasActivas);
                 verificarReservasExpiradas();
             }, (err) => {
                 console.error('Listener reservasActivas error:', err);
             });
 
-            // 3. Escuchar WhatsApp Grupo
+            // Escuchar WhatsApp Grupo
             db.ref('config/whatsappGrupo').on('value', (snapshot) => {
                 whatsappGrupo = snapshot.val() || '';
                 if (whatsappGrupo) {
@@ -219,25 +209,23 @@
                 }
             });
 
-            // Estado de conexión
             db.ref('.info/connected').on('value', s => {
-                console.log('.info/connected =', s.val());
+                console.log('Firebase conectado:', s.val());
             });
 
-            // Verificar expirados periódicamente
+            // Verificar expirados cada 30 segundos
             setInterval(verificarReservasExpiradas, 30000);
 
             document.getElementById('btnAdmin').onclick = () => {
                 isAdmin ? abrirModal('modalNuevaRifa') : abrirModal('modalLogin');
             };
 
-            // Prueba inicial de lectura (una vez)
             db.ref('rifas').once('value')
-              .then(snap => console.log('rifas snapshot (once):', snap.val()))
+              .then(snap => console.log('Rifas cargadas:', snap.val()))
               .catch(err => {
-                  console.error('ERROR leyendo rifas (once):', err);
+                  console.error('ERROR leyendo rifas:', err);
                   if (err && err.code === 'PERMISSION_DENIED') {
-                      alert('Permiso denegado al leer rifas. Si quieres permitir lectura pública temporalmente, ajusta las reglas en Firebase Console.');
+                      alert('Permiso denegado. Ajusta las reglas en Firebase Console.');
                   }
               });
         }
@@ -248,7 +236,9 @@
                 document.getElementById('btnAdmin').innerHTML = '➕ Nueva Rifa';
                 cerrarModal('modalLogin');
                 renderRifas();
-            } else { alert('Contraseña incorrecta'); }
+            } else { 
+                alert('Contraseña incorrecta'); 
+            }
         }
 
         function crearRifa() {
@@ -258,7 +248,7 @@
             const fecha = document.getElementById('fechaRifa').value;
             const whatsapp = document.getElementById('whatsappGrupo').value.trim();
 
-            if (!nombre || !precio || !premio || !fecha) return alert('Campos obligatorios');
+            if (!nombre || !precio || !premio || !fecha) return alert('Completa todos los campos obligatorios');
 
             const numeros = {};
             for (let i = 1; i <= 100; i++) {
@@ -270,7 +260,14 @@
             db.ref('rifas').push(nuevaRifa)
               .then(() => {
                   if (whatsapp) db.ref('config/whatsappGrupo').set(whatsapp);
+                  alert('¡Rifa creada exitosamente!');
                   cerrarModal('modalNuevaRifa');
+                  // Limpiar campos
+                  document.getElementById('nombreRifa').value = '';
+                  document.getElementById('precioRifa').value = '';
+                  document.getElementById('premioRifa').value = '';
+                  document.getElementById('fechaRifa').value = '';
+                  document.getElementById('whatsappGrupo').value = '';
               })
               .catch(err => {
                   console.error('Error creando rifa:', err);
@@ -281,7 +278,7 @@
         function renderRifas() {
             const container = document.getElementById('rifasContainer');
             if (rifas.length === 0) {
-                container.innerHTML = `<div class="empty-state"><p>No hay rifas</p></div>`;
+                container.innerHTML = `<div class="empty-state"><p>No hay rifas disponibles</p></div>`;
                 return;
             }
 
@@ -300,9 +297,9 @@
                             <div class="info-item">🏆 Premio: ${escapeHtml(rifa.premio)}</div>
                             <div class="info-item">📅 Sorteo: ${escapeHtml(rifa.fecha)}</div>
                             <div class="stats">
-                                <span class="stat-vendido">V: ${vendidos}</span>
-                                <span class="stat-porpagar">R: ${reservados}</span>
-                                <span class="stat-disponible">D: ${disponibles}</span>
+                                <span class="stat-vendido">Vendidos: ${vendidos}</span>
+                                <span class="stat-porpagar">Reservados: ${reservados}</span>
+                                <span class="stat-disponible">Disponibles: ${disponibles}</span>
                             </div>
                         </div>
                         <button class="btn btn-primary" style="width: 100%;" onclick="verRifa('${rifa.id}')">👁️ Ver Cartón</button>
@@ -324,6 +321,11 @@
                 <div class="rifa-detail-header">
                     <div class="small">💰 Precio: $${escapeHtml(rifaActual.precio)} | 🏆 Premio: ${escapeHtml(rifaActual.premio)} | 📅 Sorteo: ${escapeHtml(rifaActual.fecha)}</div>
                 </div>
+                
+                <div class="alert-reserva">
+                    <strong>⏰ Importante:</strong> Los números seleccionados quedan reservados por <strong>5 minutos</strong>. Realiza el pago rápidamente para confirmar tu reserva.
+                </div>
+                
                 <div class="leyenda">
                     <div class="leyenda-item"><div class="leyenda-color" style="background: #10b981;"></div><span>Vendido</span></div>
                     <div class="leyenda-item"><div class="leyenda-color" style="background: #f59e0b;"></div><span>Reservado</span></div>
@@ -340,12 +342,12 @@
                 </div>
 
                 ${!isAdmin ? `<div class="formulario-reserva" id="formularioReserva" style="display: ${numerosSeleccionados.length > 0 ? 'block' : 'none'};">
-                    <div class="numeros-seleccionados"><h4>Seleccionados:</h4><div class="badges-numeros" id="badgesNumeros">
+                    <div class="numeros-seleccionados"><h4>Números Seleccionados:</h4><div class="badges-numeros" id="badgesNumeros">
                         ${numerosSeleccionados.map(n => `<span class="badge-numero">${n}</span>`).join('')}
                     </div></div>
                     <input type="text" id="nombreCliente" placeholder="Nombre completo">
                     <input type="tel" id="nequiCliente" placeholder="Número Nequi">
-                    <button class="btn btn-success" style="width: 100%;" onclick="enviarReservaWhatsApp()">💬 Enviar WhatsApp</button>
+                    <button class="btn btn-success" style="width: 100%;" onclick="enviarReservaWhatsApp()">💬 Enviar Reserva por WhatsApp</button>
                 </div>` : '' }
             `;
 
@@ -361,7 +363,7 @@
 
             db.ref(`rifas/${rifaActual.id}/numeros/${numero}`).update({ estado: nuevoEstado })
               .then(() => {
-                  // Si el admin libera un número, borramos la reserva temporal
+                  console.log(`Número ${numero} cambiado a: ${nuevoEstado}`);
                   if (nuevoEstado === 'disponible') {
                       db.ref(`reservasActivas/${rifaActual.id}-${numero}`).remove().catch(()=>{});
                   }
@@ -381,23 +383,49 @@
         function enviarReservaWhatsApp() {
             const nombre = document.getElementById('nombreCliente').value.trim();
             const nequi = document.getElementById('nequiCliente').value.trim();
-            if (!nombre || !nequi || numerosSeleccionados.length === 0) return alert('Completa los datos');
+            
+            if (!nombre || !nequi || numerosSeleccionados.length === 0) {
+                return alert('Por favor completa todos los datos');
+            }
 
             const updates = {};
+            const timestamp = Date.now();
+            
             numerosSeleccionados.forEach(n => {
                 updates[`rifas/${rifaActual.id}/numeros/${n}/estado`] = 'reservado';
                 updates[`reservasActivas/${rifaActual.id}-${n}`] = {
                     rifaId: rifaActual.id,
                     numero: n,
-                    timestamp: Date.now()
+                    timestamp: timestamp
                 };
             });
 
             db.ref().update(updates)
               .then(() => {
-                  const msg = `¡Reserva Rifa: ${rifaActual.nombre}!\nNombre: ${nombre}\nNúmeros: ${numerosSeleccionados.join(', ')}\nTotal: $${numerosSeleccionados.length * rifaActual.precio}\nContacto: ${nequi}`;
-                  // Abre WhatsApp con el número NEQUI configurado (si el número es para recibir mensajes)
+                  console.log('Reserva creada exitosamente. Timestamp:', timestamp);
+                  
+                  const totalPagar = numerosSeleccionados.length * rifaActual.precio;
+                  
+                  // Mensaje mejorado según tu solicitud
+                  const msg = `¡Hola! Quiero reservar números en la rifa: ${rifaActual.nombre}
+
+Sorteo: ${rifaActual.fecha}
+Premio: ${rifaActual.premio}
+Precio por número: $${rifaActual.precio}
+
+Mis datos:
+- Nombre: ${nombre}
+- Nequi: ${nequi}
+- Números: ${numerosSeleccionados.join(', ')}
+- Total a pagar: $${totalPagar}
+
+Nequi para pagos: ${NEQUI}
+
+*Nota: Los números están reservados por 5 minutos. Realiza el pago y hazlos tuyos para el sorteo, los datos se actualizarán en la página.*`;
+
                   window.open(`https://wa.me/57${NEQUI}?text=${encodeURIComponent(msg)}`, '_blank');
+                  
+                  alert('¡Reserva enviada! Recuerda que tienes 5 minutos para completar el pago.');
                   cerrarModal('modalVerRifa');
               })
               .catch(err => {
@@ -408,20 +436,46 @@
 
         function verificarReservasExpiradas() {
             const ahora = Date.now();
-            const limite = 5 * 60 * 1000; // 5 min
+            const limite = 5 * 60 * 1000; // 5 minutos en milisegundos
+            let liberados = 0;
+            
             Object.keys(reservasActivas || {}).forEach(key => {
                 const res = reservasActivas[key];
                 if (!res) return;
-                if (ahora - res.timestamp > limite) {
-                    db.ref(`rifas/${res.rifaId}/numeros/${res.numero}`).update({ estado: 'disponible' }).catch(()=>{});
-                    db.ref(`reservasActivas/${key}`).remove().catch(()=>{});
+                
+                const tiempoTranscurrido = ahora - res.timestamp;
+                
+                if (tiempoTranscurrido > limite) {
+                    console.log(`Liberando número ${res.numero} de rifa ${res.rifaId} - Expiró hace ${Math.round((tiempoTranscurrido - limite) / 1000)} segundos`);
+                    
+                    db.ref(`rifas/${res.rifaId}/numeros/${res.numero}`).update({ estado: 'disponible' })
+                        .then(() => {
+                            return db.ref(`reservasActivas/${key}`).remove();
+                        })
+                        .then(() => {
+                            liberados++;
+                            console.log(`Número ${res.numero} liberado exitosamente`);
+                        })
+                        .catch(err => {
+                            console.error('Error liberando número:', err);
+                        });
+                } else {
+                    const minutosRestantes = Math.ceil((limite - tiempoTranscurrido) / 60000);
+                    console.log(`Número ${res.numero}: ${minutosRestantes} minuto(s) restante(s)`);
                 }
             });
+            
+            if (liberados > 0) {
+                console.log(`Se liberaron ${liberados} número(s) por expiración`);
+            }
         }
 
         function eliminarRifa(id) {
-            if (confirm('¿Eliminar rifa?')) {
+            if (confirm('¿Estás seguro de eliminar esta rifa?')) {
                 db.ref(`rifas/${id}`).remove()
+                  .then(() => {
+                      alert('Rifa eliminada exitosamente');
+                  })
                   .catch(err => {
                       console.error('Error eliminando rifa:', err);
                       alert('Error al eliminar rifa (ver consola).');
@@ -429,11 +483,19 @@
             }
         }
 
-        function abrirModal(id) { document.getElementById(id).classList.add('active'); }
-        function cerrarModal(id) { document.getElementById(id).classList.remove('active'); if(id==='modalVerRifa') rifaActual=null; }
+        function abrirModal(id) { 
+            document.getElementById(id).classList.add('active'); 
+        }
+        
+        function cerrarModal(id) { 
+            document.getElementById(id).classList.remove('active'); 
+            if(id==='modalVerRifa') {
+                rifaActual = null;
+                numerosSeleccionados = [];
+            }
+        }
 
-        // util: escapar HTML simple para evitar inyección
-        function escapeHtml (unsafe) {
+        function escapeHtml(unsafe) {
             if (unsafe === undefined || unsafe === null) return '';
             return String(unsafe)
                 .replace(/&/g, "&amp;")
@@ -443,7 +505,7 @@
                 .replace(/'/g, "&#039;");
         }
 
-        // Iniciar app
+        // Iniciar aplicación
         init();
     </script>
 </body>
