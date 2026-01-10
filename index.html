@@ -111,6 +111,7 @@
                 <div style="display: flex; gap: 10px;">
                     <button class="btn btn-success" id="btnGrupo" style="display: none;">📱 Grupo WhatsApp</button>
                     <button class="btn btn-primary" id="btnAdmin">⚙️ Admin</button>
+                    <button class="btn btn-danger" id="btnLogout" style="display: none;">🚪 Cerrar Sesión</button>
                 </div>
             </div>
             <div id="rifasContainer"></div>
@@ -206,12 +207,14 @@
         </div>
     </div>
 
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
 
     <script>
         const firebaseConfig = {
-            apiKey: "AIzaSyC2jjXcONaf6Sej9hQ4ZqTVwUI2Nlz_2qg",
+            apiKey: "AIzaSyA2bkd15PWsNETLduwJMeAn_Y6lf-i6nsg",
             authDomain: "sistema-rifas-cc455.firebaseapp.com",
             databaseURL: "https://rifas-9b39c-default-rtdb.firebaseio.com",
             projectId: "sistema-rifas-cc455",
@@ -233,9 +236,12 @@
         }
 
         const db = firebase.database();
+        const auth = firebase.auth();
 
-        const ADMIN_PASSWORD = 'Gmz1998ferMono';
+        // ⚠️ CONFIGURACIÓN DEL ADMIN ÚNICO - CAMBIA ESTE CORREO SI ES DIFERENTE
+        const ADMIN_EMAIL = "edixongomezcarlosama@gmail.com";
         const NEQUI = '3116516861';
+        
         let isAdmin = false;
         let rifas = [];
         let rifaActual = null;
@@ -247,6 +253,88 @@
         function formatearNumero(num) {
             return num < 10 ? '0' + num : '' + num;
         }
+
+        // 🔒 VERIFICAR ESTADO DE AUTENTICACIÓN
+        auth.onAuthStateChanged((user) => {
+            if (user) {
+                // Verificar si es el admin
+                if (user.email === ADMIN_EMAIL) {
+                    isAdmin = true;
+                    console.log("✅ Admin autenticado:", user.email);
+                } else {
+                    isAdmin = false;
+                    console.log("❌ Usuario normal:", user.email);
+                    // Si no es admin, cerrar sesión automáticamente
+                    auth.signOut();
+                    alert("Solo el administrador puede acceder.");
+                }
+            } else {
+                isAdmin = false;
+            }
+            actualizarInterfazAuth();
+            renderRifas();
+        });
+
+        // 🔒 ACTUALIZAR INTERFAZ SEGÚN AUTENTICACIÓN
+        function actualizarInterfazAuth() {
+            const btnAdmin = document.getElementById('btnAdmin');
+            const btnLogout = document.getElementById('btnLogout');
+            
+            if (isAdmin) {
+                btnAdmin.innerHTML = '➕ Nueva Rifa';
+                btnAdmin.onclick = () => abrirModal('modalNuevaRifa');
+                btnLogout.style.display = 'inline-flex';
+            } else {
+                btnAdmin.innerHTML = '⚙️ Admin';
+                btnAdmin.onclick = () => abrirModal('modalLogin');
+                btnLogout.style.display = 'none';
+            }
+        }
+
+        // 🔒 LOGIN CON FIREBASE AUTHENTICATION
+        function login() {
+            const password = document.getElementById('inputPassword').value;
+            
+            if (!password) {
+                alert('Ingresa la contraseña');
+                return;
+            }
+            
+            // Iniciar sesión con Firebase Authentication
+            auth.signInWithEmailAndPassword(ADMIN_EMAIL, password)
+                .then((userCredential) => {
+                    cerrarModal('modalLogin');
+                    document.getElementById('inputPassword').value = '';
+                })
+                .catch((error) => {
+                    let mensaje = 'Error al iniciar sesión';
+                    if (error.code === 'auth/wrong-password') {
+                        mensaje = 'Contraseña incorrecta';
+                    } else if (error.code === 'auth/user-not-found') {
+                        mensaje = 'Usuario no encontrado';
+                    } else if (error.code === 'auth/too-many-requests') {
+                        mensaje = 'Demasiados intentos. Intenta más tarde';
+                    }
+                    alert(mensaje);
+                });
+        }
+
+        // 🔒 CERRAR SESIÓN
+        function cerrarSesion() {
+            if (confirm('¿Estás seguro de cerrar sesión?')) {
+                auth.signOut()
+                    .then(() => {
+                        alert('Sesión cerrada exitosamente');
+                    })
+                    .catch((error) => {
+                        console.error('Error al cerrar sesión:', error);
+                        alert('Error al cerrar sesión');
+                    });
+            }
+        }
+
+        // Configurar el botón de cerrar sesión
+        document.getElementById('btnLogout').onclick = cerrarSesion;
 
         function init() {
             db.ref('rifas').on('value', (snapshot) => {
@@ -281,21 +369,14 @@
             });
 
             setInterval(verificarReservasExpiradas, 30000);
-            document.getElementById('btnAdmin').onclick = () => isAdmin ? abrirModal('modalNuevaRifa') : abrirModal('modalLogin');
-        }
-
-        function login() {
-            if (document.getElementById('inputPassword').value === ADMIN_PASSWORD) {
-                isAdmin = true;
-                document.getElementById('btnAdmin').innerHTML = '➕ Nueva Rifa';
-                cerrarModal('modalLogin');
-                renderRifas();
-            } else { 
-                alert('Contraseña incorrecta'); 
-            }
         }
 
         function crearRifa() {
+            if (!isAdmin) {
+                alert('Solo administradores pueden crear rifas');
+                return;
+            }
+            
             const nombre = document.getElementById('nombreRifa').value.trim();
             const precio = Number(document.getElementById('precioRifa').value);
             const premio = document.getElementById('premioRifa').value.trim();
@@ -305,7 +386,6 @@
             if (!nombre || !precio || !premio || !fecha) return alert('Completa todos los campos');
 
             const numeros = {};
-            // ✅ CAMBIO AQUÍ: Solo hasta 99
             for (let i = 1; i <= 99; i++) {
                 numeros[i] = { numero: i, estado: 'disponible' };
             }
@@ -387,7 +467,6 @@
                         const disabled = (!isAdmin && (estado === 'vendido' || estado === 'reservado')) ? 'disabled' : '';
                         const selClass = numerosSeleccionados.includes(Number(num.numero)) ? 'seleccionado' : '';
                         const click = isAdmin ? `cambiarEstadoAdmin(${num.numero})` : `seleccionarNumero(${num.numero})`;
-                        // ✅ AQUÍ SE FORMATEA EL NÚMERO CON CERO ADELANTE
                         return `<button class="numero-btn ${estado} ${selClass}" onclick="${click}" ${disabled}>${formatearNumero(num.numero)}</button>`;
                     }).join('')}
                 </div>
@@ -407,7 +486,7 @@
         }
 
         function cambiarEstadoAdmin(numero) {
-            if (!rifaActual) return;
+            if (!rifaActual || !isAdmin) return;
             const estados = ['disponible', 'reservado', 'vendido'];
             const actual = rifaActual.numeros[numero]?.estado || 'disponible';
             const nuevo = estados[(estados.indexOf(actual) + 1) % 3];
@@ -448,7 +527,6 @@
 
             db.ref().update(updates).then(() => {
                 const total = numerosSeleccionados.length * rifaActual.precio;
-                // ✅ NÚMEROS FORMATEADOS EN WHATSAPP
                 const numerosFormateados = numerosSeleccionados.map(n => formatearNumero(n)).join(', ');
                 const msg = `¡Hola! Quiero reservar números en: ${rifaActual.nombre}
 
@@ -488,6 +566,10 @@ Nequi para pagos: ${NEQUI}
         }
 
         function eliminarRifa(id) {
+            if (!isAdmin) {
+                alert('Solo administradores pueden eliminar rifas');
+                return;
+            }
             if (confirm('¿Eliminar rifa?')) {
                 db.ref(`rifas/${id}`).remove();
             }
