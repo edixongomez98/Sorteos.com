@@ -98,6 +98,12 @@
         .footer-item a { color: #f59e0b; text-decoration: none; transition: color 0.3s; }
         .footer-item a:hover { color: #fbbf24; text-decoration: underline; }
         .footer-copyright { margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 0.9em; color: #f0e7e7; }
+        
+        /* ===== ESTILOS PARA LOGIN/REGISTRO ===== */
+        .auth-tabs { display: flex; gap: 10px; margin-bottom: 20px; }
+        .auth-tab { padding: 10px 20px; border: none; background: #e5e7eb; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: bold; }
+        .auth-tab.active { background: #ca0505; color: white; }
+        .error-message { background: #fee2e2; border: 1px solid #ef4444; color: #991b1b; padding: 10px; border-radius: 8px; margin-bottom: 15px; display: none; }
     </style>
 </head>
 <body>
@@ -111,6 +117,7 @@
                 <div style="display: flex; gap: 10px;">
                     <button class="btn btn-success" id="btnGrupo" style="display: none;">📱 Grupo WhatsApp</button>
                     <button class="btn btn-primary" id="btnAdmin">⚙️ Admin</button>
+                    <button class="btn btn-danger" id="btnLogout" style="display: none;">🚪 Cerrar Sesión</button>
                 </div>
             </div>
             <div id="rifasContainer"></div>
@@ -125,7 +132,7 @@
                          <strong>Edixon Fernando Gomez Carlosama</strong>
                     </div>
                     <div class="footer-item">
-                        ✉️ <a href="gomezedixon473@gmail.com">escribeme al correo para ayuda</a>
+                        ✉️ <a href="mailto:gomezedixon473@gmail.com">escribeme al correo para ayuda</a>
                     </div>
                     <div class="footer-item">
                         💬 <a href="https://chat.whatsapp.com/CMCleaNqJhkK78ZJufhDjG" target="_blank">Grupo WhatsApp - Sorteos</a>
@@ -140,28 +147,54 @@
             </div>
         </div>
     </div>
-    </style>
-</head>
-<body>
 
-    <div class="container">
-        <div class="card">
-            <div class="header">
-                
-                
-
-    <!-- Modal Login -->
+    <!-- Modal Login/Registro -->
     <div class="modal" id="modalLogin">
         <div class="modal-content" style="max-width: 420px;">
             <span class="close-btn" onclick="cerrarModal('modalLogin')">← Volver</span>
             <h2>Acceso Administrador</h2>
-            <div class="form-group">
-                <label>Contraseña</label>
-                <input id="inputPassword" type="password" placeholder="Contraseña admin">
+            
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="cambiarTab('login')">Iniciar Sesión</button>
+                <button class="auth-tab" onclick="cambiarTab('registro')">Registrarse</button>
             </div>
-            <div style="display:flex; gap:10px;">
-                <button class="btn btn-primary" onclick="login()">Entrar</button>
-                <button class="btn btn-secondary" onclick="cerrarModal('modalLogin')">Cancelar</button>
+            
+            <div id="errorMessage" class="error-message"></div>
+            
+            <!-- TAB LOGIN -->
+            <div id="tabLogin">
+                <div class="form-group">
+                    <label>Correo electrónico</label>
+                    <input id="loginEmail" type="email" placeholder="correo@ejemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input id="loginPassword" type="password" placeholder="Contraseña">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-primary" onclick="loginConEmail()">Entrar</button>
+                    <button class="btn btn-secondary" onclick="cerrarModal('modalLogin')">Cancelar</button>
+                </div>
+            </div>
+            
+            <!-- TAB REGISTRO -->
+            <div id="tabRegistro" style="display: none;">
+                <div class="form-group">
+                    <label>Correo electrónico</label>
+                    <input id="registroEmail" type="email" placeholder="correo@ejemplo.com">
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input id="registroPassword" type="password" placeholder="Mínimo 6 caracteres">
+                </div>
+                <div class="form-group">
+                    <label>Confirmar contraseña</label>
+                    <input id="registroPasswordConfirm" type="password" placeholder="Confirma tu contraseña">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-success" onclick="registrarUsuario()">Registrarse</button>
+                    <button class="btn btn-secondary" onclick="cerrarModal('modalLogin')">Cancelar</button>
+                </div>
             </div>
         </div>
     </div>
@@ -206,7 +239,9 @@
         </div>
     </div>
 
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-database-compat.js"></script>
 
     <script>
@@ -233,10 +268,11 @@
         }
 
         const db = firebase.database();
+        const auth = firebase.auth();
 
-        const ADMIN_PASSWORD = 'Gmz1998ferMono';
         const NEQUI = '3116516861';
         let isAdmin = false;
+        let currentUser = null;
         let rifas = [];
         let rifaActual = null;
         let numerosSeleccionados = [];
@@ -246,6 +282,155 @@
         // ✅ FUNCIÓN PARA FORMATEAR NÚMEROS CON CERO ADELANTE
         function formatearNumero(num) {
             return num < 10 ? '0' + num : '' + num;
+        }
+
+        // 🔒 VERIFICAR ESTADO DE AUTENTICACIÓN
+        auth.onAuthStateChanged((user) => {
+            currentUser = user;
+            if (user) {
+                verificarAdmin(user);
+            } else {
+                isAdmin = false;
+                actualizarInterfazAuth();
+                renderRifas();
+            }
+        });
+
+        // 🔒 VERIFICAR SI EL USUARIO ES ADMIN
+        function verificarAdmin(user) {
+            // Todos los usuarios autenticados son administradores
+            isAdmin = true;
+            actualizarInterfazAuth();
+            renderRifas();
+        }
+
+        // 🔒 ACTUALIZAR INTERFAZ SEGÚN AUTENTICACIÓN
+        function actualizarInterfazAuth() {
+            const btnAdmin = document.getElementById('btnAdmin');
+            const btnLogout = document.getElementById('btnLogout');
+            
+            if (currentUser && isAdmin) {
+                btnAdmin.innerHTML = '➕ Nueva Rifa';
+                btnAdmin.onclick = () => abrirModal('modalNuevaRifa');
+                btnLogout.style.display = 'inline-flex';
+                btnLogout.onclick = cerrarSesion;
+            } else {
+                btnAdmin.innerHTML = '⚙️ Admin';
+                btnAdmin.onclick = () => abrirModal('modalLogin');
+                btnLogout.style.display = 'none';
+            }
+        }
+
+        // 🔒 CAMBIAR ENTRE TABS DE LOGIN/REGISTRO
+        function cambiarTab(tab) {
+            const tabLogin = document.getElementById('tabLogin');
+            const tabRegistro = document.getElementById('tabRegistro');
+            const tabs = document.querySelectorAll('.auth-tab');
+            
+            tabs.forEach(t => t.classList.remove('active'));
+            
+            if (tab === 'login') {
+                tabLogin.style.display = 'block';
+                tabRegistro.style.display = 'none';
+                tabs[0].classList.add('active');
+            } else {
+                tabLogin.style.display = 'none';
+                tabRegistro.style.display = 'block';
+                tabs[1].classList.add('active');
+            }
+            
+            ocultarError();
+        }
+
+        // 🔒 MOSTRAR ERROR
+        function mostrarError(mensaje) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = mensaje;
+            errorDiv.style.display = 'block';
+        }
+
+        // 🔒 OCULTAR ERROR
+        function ocultarError() {
+            document.getElementById('errorMessage').style.display = 'none';
+        }
+
+        // 🔒 LOGIN CON EMAIL Y CONTRASEÑA
+        function loginConEmail() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            
+            if (!email || !password) {
+                mostrarError('Por favor completa todos los campos');
+                return;
+            }
+            
+            auth.signInWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    cerrarModal('modalLogin');
+                    ocultarError();
+                })
+                .catch((error) => {
+                    let mensaje = 'Error al iniciar sesión';
+                    if (error.code === 'auth/user-not-found') {
+                        mensaje = 'Usuario no encontrado';
+                    } else if (error.code === 'auth/wrong-password') {
+                        mensaje = 'Contraseña incorrecta';
+                    } else if (error.code === 'auth/invalid-email') {
+                        mensaje = 'Email inválido';
+                    }
+                    mostrarError(mensaje);
+                });
+        }
+
+        // 🔒 REGISTRAR NUEVO USUARIO
+        function registrarUsuario() {
+            const email = document.getElementById('registroEmail').value.trim();
+            const password = document.getElementById('registroPassword').value;
+            const passwordConfirm = document.getElementById('registroPasswordConfirm').value;
+            
+            if (!email || !password || !passwordConfirm) {
+                mostrarError('Por favor completa todos los campos');
+                return;
+            }
+            
+            if (password !== passwordConfirm) {
+                mostrarError('Las contraseñas no coinciden');
+                return;
+            }
+            
+            if (password.length < 6) {
+                mostrarError('La contraseña debe tener mínimo 6 caracteres');
+                return;
+            }
+            
+            auth.createUserWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    alert('¡Cuenta creada exitosamente! Ahora puedes iniciar sesión.');
+                    cambiarTab('login');
+                    ocultarError();
+                })
+                .catch((error) => {
+                    let mensaje = 'Error al crear la cuenta';
+                    if (error.code === 'auth/email-already-in-use') {
+                        mensaje = 'Este correo ya está registrado';
+                    } else if (error.code === 'auth/invalid-email') {
+                        mensaje = 'Email inválido';
+                    } else if (error.code === 'auth/weak-password') {
+                        mensaje = 'Contraseña muy débil';
+                    }
+                    mostrarError(mensaje);
+                });
+        }
+
+        // 🔒 CERRAR SESIÓN
+        function cerrarSesion() {
+            auth.signOut()
+                .then(() => {
+                    alert('Sesión cerrada exitosamente');
+                })
+                .catch((error) => {
+                    console.error('Error al cerrar sesión:', error);
+                });
         }
 
         function init() {
@@ -281,21 +466,14 @@
             });
 
             setInterval(verificarReservasExpiradas, 30000);
-            document.getElementById('btnAdmin').onclick = () => isAdmin ? abrirModal('modalNuevaRifa') : abrirModal('modalLogin');
-        }
-
-        function login() {
-            if (document.getElementById('inputPassword').value === ADMIN_PASSWORD) {
-                isAdmin = true;
-                document.getElementById('btnAdmin').innerHTML = '➕ Nueva Rifa';
-                cerrarModal('modalLogin');
-                renderRifas();
-            } else { 
-                alert('Contraseña incorrecta'); 
-            }
         }
 
         function crearRifa() {
+            if (!isAdmin) {
+                alert('Solo administradores pueden crear rifas');
+                return;
+            }
+            
             const nombre = document.getElementById('nombreRifa').value.trim();
             const precio = Number(document.getElementById('precioRifa').value);
             const premio = document.getElementById('premioRifa').value.trim();
@@ -305,7 +483,6 @@
             if (!nombre || !precio || !premio || !fecha) return alert('Completa todos los campos');
 
             const numeros = {};
-            // ✅ CAMBIO AQUÍ: Solo hasta 99
             for (let i = 1; i <= 99; i++) {
                 numeros[i] = { numero: i, estado: 'disponible' };
             }
@@ -387,7 +564,6 @@
                         const disabled = (!isAdmin && (estado === 'vendido' || estado === 'reservado')) ? 'disabled' : '';
                         const selClass = numerosSeleccionados.includes(Number(num.numero)) ? 'seleccionado' : '';
                         const click = isAdmin ? `cambiarEstadoAdmin(${num.numero})` : `seleccionarNumero(${num.numero})`;
-                        // ✅ AQUÍ SE FORMATEA EL NÚMERO CON CERO ADELANTE
                         return `<button class="numero-btn ${estado} ${selClass}" onclick="${click}" ${disabled}>${formatearNumero(num.numero)}</button>`;
                     }).join('')}
                 </div>
@@ -407,7 +583,7 @@
         }
 
         function cambiarEstadoAdmin(numero) {
-            if (!rifaActual) return;
+            if (!rifaActual || !isAdmin) return;
             const estados = ['disponible', 'reservado', 'vendido'];
             const actual = rifaActual.numeros[numero]?.estado || 'disponible';
             const nuevo = estados[(estados.indexOf(actual) + 1) % 3];
@@ -448,19 +624,18 @@
 
             db.ref().update(updates).then(() => {
                 const total = numerosSeleccionados.length * rifaActual.precio;
-                // ✅ NÚMEROS FORMATEADOS EN WHATSAPP
                 const numerosFormateados = numerosSeleccionados.map(n => formatearNumero(n)).join(', ');
                 const msg = `¡Hola! Quiero reservar números en: ${rifaActual.nombre}
 
 Sorteo: ${rifaActual.fecha}
 Premio: ${rifaActual.premio}
-Precio: $${rifaActual.precio}
+Precio: ${rifaActual.precio}
 
 Mis datos:
 - Nombre: ${nombre}
 - Nequi: ${nequi}
 - Números: ${numerosFormateados}
-- Total: $${total}
+- Total: ${total}
 
 Nequi para pagos: ${NEQUI}
 
@@ -488,6 +663,10 @@ Nequi para pagos: ${NEQUI}
         }
 
         function eliminarRifa(id) {
+            if (!isAdmin) {
+                alert('Solo administradores pueden eliminar rifas');
+                return;
+            }
             if (confirm('¿Eliminar rifa?')) {
                 db.ref(`rifas/${id}`).remove();
             }
